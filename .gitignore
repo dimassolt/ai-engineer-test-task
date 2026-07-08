@@ -1,0 +1,15 @@
+# secrets / task brief
+.env
+AI Engineer Final Task.pdf
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# runtime state
+.checkpoints.sqlite
+*.sqlite

@@ -1,0 +1,17 @@
+# Pinned to the versions this project was built and tested against.
+# (Or just `pip install -e .` — pyproject.toml is the source of truth.)
+langgraph==1.2.8
+langgraph-checkpoint-sqlite==3.1.0
+langchain==1.3.11
+langchain-core==1.4.8
+langchain-openai==1.3.3
+langchain-anthropic==1.4.8
+langchain-google-genai==4.2.7
+python-dotenv==1.2.2
+pydantic==2.13.4
+
+# optional UI
+streamlit==1.59.1
+
+# dev
+pytest==9.1.1
