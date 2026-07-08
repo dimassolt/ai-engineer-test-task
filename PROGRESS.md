@@ -4,7 +4,7 @@ Single source of truth for build status. Read at the start of each session; upda
 each meaningful change. See `CLAUDE.md` §6 for the protocol. Keep entries to one line each.
 
 - **Status legend:** `[ ]` not started · `[~]` in progress · `[x]` done
-- **Current phase:** Phase 10 — Tests + docs `[x]` (remaining deliverable: walkthrough recording)
+- **Current phase:** Phase 12 — Dashboard: live state, dialog, PMS-write indicator, decisions DB `[x]` (remaining deliverable: walkthrough recording)
 - **Last updated:** 2026-07-08
 
 ---
@@ -74,6 +74,27 @@ each meaningful change. See `CLAUDE.md` §6 for the protocol. Keep entries to on
 - [ ] Walkthrough recording (manual deliverable — not code)
 - **Done when:** recording captured.
 
+### Phase 11 — Interactive Streamlit dashboard  `[x]`
+Make the optional UI a real dashboard: show system state + how the agent thinks. Stays a thin
+client over `service.py` (no new backend). Draft/guest messages render as friendly cards, not code.
+- [x] Shell + Altek branding: wide layout, `st.logo(altek-logo.svg)`, sidebar logo + hotel name, modern settings widgets
+- [x] Pipeline state strip (6 stages as live status badges) + KPI row (intent/risk/actions/mode/status)
+- [x] Reasoning view: decision `log` timeline + ReAct `tool_trace` (tool/args/result) as expandable "thinking" steps
+- [x] Plan & reply view: parsed fields, risk badges, actions, draft reply as friendly email card (`render_message` helper)
+- [x] PMS explorer (cached) + approval panel with editable draft reply (wires service `edited_reply`)
+- [x] Smoke-tested all 3 render paths offline via `AppTest` (idle / completed / risky-awaiting); live boot OK
+- **Done:** all three scenarios render with live state + reasoning trace; messages shown friendly; logo present.
+
+### Phase 12 — Dashboard: live state, dialog, PMS-write indicator, decisions DB  `[x]`
+Second dashboard pass. Backend additions stay minimal and reuse existing state.
+- [x] Favicon = Altek logo (`page_icon`); `log` now accumulates across nodes (`operator.add` reducer)
+- [x] Live "system state": `service.stream_run`/`stream_resume` (`graph.stream`); pipeline lights up per node
+- [x] PMS-write indicator badge: read-only / pending / wrote / dry-run / blocked (risky)
+- [x] Continue-dialog chat: transcript + follow-up `st.chat_input`, prior turns passed as context
+- [x] SQLite decisions audit (`history.py`); service records terminal runs; dashboard shows approved vs disapproved
+- [x] Verified: pytest 20/20; offline AppTest (idle/completed/awaiting/conversation); live stream (auto read-only + human pause→resume write) — decision recorded only at terminal, `wrote_pms` correct
+- **Done:** all features work live; recording gated to non-memory checkpointer (tests unaffected).
+
 ---
 
 ## Session log
@@ -82,6 +103,21 @@ each meaningful change. See `CLAUDE.md` §6 for the protocol. Keep entries to on
 - 2026-07-08 — Built full agent: PMS+tools, workflows, providers, graph (6 nodes), guardrails,
   CLI, Streamlit. 20 pytest tests green. Verified all 3 scenarios + both modes live on Anthropic
   (claude-sonnet-4-6), incl. cross-process SQLite resume. Reconciled README/Architecture/PROGRESS.
+- 2026-07-08 — Phase 11: rebuilt `app_streamlit.py` into an interactive dashboard — Altek logo,
+  live pipeline-state strip, KPI row, Reasoning view (decision log + ReAct tool_trace), Plan &
+  reply, PMS explorer, editable approval reply. Guest messages render as friendly email cards
+  (not code). Verified offline via `AppTest` (3 render paths) + clean live boot. Still a thin
+  client over `service.py`.
+- 2026-07-08 — Phase 12: added live streaming (`stream_run`/`stream_resume`) so the dashboard
+  pipeline lights up per node; Altek favicon; `log` reducer (accumulates trail); PMS-write
+  indicator badge; continue-dialog chat (context passed to follow-ups); SQLite decision audit
+  (`history.py`) + approved/disapproved view. Verified live (auto read-only + human pause→resume
+  write) and offline (pytest 20/20, AppTest 4 paths).
+- 2026-07-08 — Added `test-questions/` eval dataset: 20 guest-email cases (7 read / 7 write /
+  6 risky) with structured tool-call gold standards + PMS-mutation deltas. Gold standards
+  computed and re-verified against pms.py/workflows.py/guardrails.py (0 mismatches). Surfaced 2
+  findings: TQ05 lookup falls to intent `other`→ambiguous (recommend `reservation_lookup` intent);
+  TQ16 `financial_request` matches on `refund` inside `non-refundable` (harmless).
 
 ## Decision log
 
@@ -105,6 +141,19 @@ each meaningful change. See `CLAUDE.md` §6 for the protocol. Keep entries to on
   Also added graceful provider-error handling in CLI + Streamlit (no raw tracebacks on quota/network).
   Verified live: OpenAI + Anthropic OK; Gemini key has 0 free-tier quota (429) — external, not a bug.
 - 2026-07-08 — **Bare dates default to year 2025** (the PMS's populated calendar) so scenarios hit data.
+- 2026-07-08 — **Dashboard surfaces existing state, adds no backend.** The "how it thinks" view is
+  just the already-persisted `log` + `tool_trace`; the pipeline strip is derived from state. Keeps
+  the Streamlit app a thin presentation client and respects "no over-engineering". The editable
+  approval reply wires the previously-unused `service.resume(edited_reply=...)` param.
+- 2026-07-08 — **`log` gets an `operator.add` reducer.** Without it each node overwrote `log`, so a
+  finished run kept only the last line; the reducer makes it a full decision trail (needed for the
+  reasoning view). Only `log` accumulates — other list fields are set-once and stay overwrite.
+- 2026-07-08 — **Multi-turn dialog via context-passing, not graph memory.** Each follow-up runs a
+  fresh graph turn with the prior transcript prepended to the email; avoids checkpoint state-bleed
+  and keeps nodes unchanged. The checkpointer still handles intra-run pause/resume.
+- 2026-07-08 — **Reversed the earlier "no feedback store" cut** — the task now asks for it. Added a
+  minimal stdlib-`sqlite3` audit log (`history.py`), separate from the LangGraph checkpointer.
+  Recording is best-effort and gated to non-memory checkpointers so tests/offline runs stay clean.
 
 ## Known issues / TODO
 

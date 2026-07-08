@@ -37,7 +37,7 @@ class WorkflowResult:
     error: str | None = None
 
     def summary(self) -> str:
-        return self.error if not self.ok else "; ".join(s["step"] for s in self.steps)
+        return self.error if not self.ok else "; ".join(s["step"] for s in self.steps) # type: ignore
 
 
 def _require(args: dict[str, Any], *keys: str) -> None:

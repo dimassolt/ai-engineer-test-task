@@ -5,19 +5,26 @@ Two operations mirror the two-phase human-in-the-loop flow:
   or a terminal status if it ran through (auto mode, not risky).
 - `resume` supplies a human's approve/reject decision to a paused run (by `thread_id`).
 
-Both return a `RunResult` carrying the full agent state for display.
+`stream_run` / `stream_resume` are streaming variants that yield after each graph node so a
+UI can show live progress; they finish by yielding the same `RunResult`.
+
+Every terminal run is appended to the SQLite decision log (`history.py`) unless the run
+uses the in-memory checkpointer (tests) — so the audit trail only reflects real runs.
+
+All entrypoints return a `RunResult` carrying the full agent state for display.
 """
 
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterator
 
 from langgraph.types import Command
 
 from .config import Settings
 from .graph.build import build_graph
+from .history import record_decision
 
 
 @dataclass
@@ -32,7 +39,35 @@ class RunResult:
         return self.status == "awaiting_approval"
 
 
-def _collect(graph, thread_id: str, invoke_result: Any) -> RunResult:
+def _wrote_pms(state: dict[str, Any]) -> bool:
+    """True only if a write workflow actually committed (never on dry-run)."""
+    if state.get("dry_run"):
+        return False
+    return any(r.get("ok") for r in state.get("execution", []))
+
+
+def _maybe_record(settings: Settings | None, result: RunResult) -> None:
+    """Append a terminal decision to the audit log (skipped for the in-memory backend)."""
+    if settings is None or settings.checkpointer == "memory" or result.awaiting_approval:
+        return
+    s = result.state
+    actions = [a.get("workflow") for a in s.get("plan", {}).get("actions", [])]
+    record_decision(
+        settings.history_db_path,
+        thread_id=result.thread_id,
+        intent=s.get("intent"),
+        risky=s.get("risky"),
+        approval=s.get("approval"),
+        status=result.status,
+        wrote_pms=_wrote_pms(s),
+        actions=actions,
+        email=s.get("email"),
+        answer=s.get("draft_reply"),
+        sent_to=(s.get("sent") or {}).get("to"),
+    )
+
+
+def _collect(graph, thread_id: str, invoke_result: Any, settings: Settings | None = None) -> RunResult:
     config = {"configurable": {"thread_id": thread_id}}
     snapshot = graph.get_state(config)
     values = dict(snapshot.values)
@@ -49,18 +84,23 @@ def _collect(graph, thread_id: str, invoke_result: Any) -> RunResult:
                 payload = interrupts[0].value
         return RunResult(thread_id, "awaiting_approval", values, payload)
 
-    return RunResult(thread_id, values.get("status", "completed"), values)
+    result = RunResult(thread_id, values.get("status", "completed"), values)
+    _maybe_record(settings, result)
+    return result
 
+
+def _inputs(email: str, settings: Settings) -> dict[str, Any]:
+    return {"email": email, "mode": settings.mode, "dry_run": settings.dry_run}
+
+
+# ── Blocking entrypoints (used by the CLI) ───────────────────────────────────
 
 def run_email(email: str, settings: Settings, thread_id: str | None = None) -> RunResult:
     graph, _ = build_graph(settings)
     thread_id = thread_id or uuid.uuid4().hex[:12]
     config = {"configurable": {"thread_id": thread_id}}
-    result = graph.invoke(
-        {"email": email, "mode": settings.mode, "dry_run": settings.dry_run},
-        config,
-    )
-    return _collect(graph, thread_id, result)
+    result = graph.invoke(_inputs(email, settings), config)  # type: ignore
+    return _collect(graph, thread_id, result, settings)
 
 
 def resume(
@@ -71,5 +111,39 @@ def resume(
     payload: dict[str, Any] = {"approved": approved}
     if edited_reply:
         payload["edited_reply"] = edited_reply
-    result = graph.invoke(Command(resume=payload), config)
-    return _collect(graph, thread_id, result)
+    result = graph.invoke(Command(resume=payload), config)  # type: ignore
+    return _collect(graph, thread_id, result, settings)
+
+
+# ── Streaming entrypoints (used by the UI for live progress) ──────────────────
+#
+# Each yields ("node", <chunk>) after every graph node completes, where <chunk> is
+# `{node_name: state_delta}` (or `{"__interrupt__": (...)}` when the gate pauses), then a
+# final ("result", RunResult) once the graph settles or pauses at the approval gate.
+
+def stream_run(
+    email: str, settings: Settings, thread_id: str | None = None
+) -> Iterator[tuple[str, Any]]:
+    graph, _ = build_graph(settings)
+    thread_id = thread_id or uuid.uuid4().hex[:12]
+    config = {"configurable": {"thread_id": thread_id}}
+    last: Any = None
+    for chunk in graph.stream(_inputs(email, settings), config, stream_mode="updates"):  # type: ignore
+        last = chunk
+        yield ("node", chunk)
+    yield ("result", _collect(graph, thread_id, last, settings))
+
+
+def stream_resume(
+    settings: Settings, thread_id: str, approved: bool, edited_reply: str | None = None
+) -> Iterator[tuple[str, Any]]:
+    graph, _ = build_graph(settings)
+    config = {"configurable": {"thread_id": thread_id}}
+    payload: dict[str, Any] = {"approved": approved}
+    if edited_reply:
+        payload["edited_reply"] = edited_reply
+    last: Any = None
+    for chunk in graph.stream(Command(resume=payload), config, stream_mode="updates"):  # type: ignore
+        last = chunk
+        yield ("node", chunk)
+    yield ("result", _collect(graph, thread_id, last, settings))

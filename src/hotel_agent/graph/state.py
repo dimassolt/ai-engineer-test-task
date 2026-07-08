@@ -10,7 +10,8 @@ return well-formed, typed results (a parsed email and an action plan) instead of
 
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict
+import operator
+from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import BaseModel, Field
 
@@ -84,4 +85,6 @@ class AgentState(TypedDict, total=False):
     sent: dict | None
     # --- finalize ---
     status: str          # "completed" | "awaiting_approval" | "rejected" | "no_action" | "error"
-    log: list[str]
+    # `log` accumulates across nodes (each node appends one line) so the finished state
+    # carries the whole decision trail; the `operator.add` reducer concatenates the lists.
+    log: Annotated[list[str], operator.add]

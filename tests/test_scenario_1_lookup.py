@@ -9,7 +9,7 @@ def test_availability_lookup_makes_no_write(make_graph, pms):
         summary="Guest asks about room availability 20-22 April.",
         intent="availability_inquiry",
         check_in="2025-04-20", check_out="2025-04-22", adults=2,
-    )
+    ) # type: ignore
     plan = Plan(
         summary="Answer availability for 20-22 April; no booking requested.",
         actions=[],

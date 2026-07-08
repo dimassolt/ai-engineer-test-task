@@ -69,6 +69,7 @@ class Settings:
     data_path: str = DEFAULT_DATA_PATH
     checkpointer: str = "sqlite"            # "sqlite" | "memory"
     db_path: str = ".checkpoints.sqlite"
+    history_db_path: str = ".agent_history.sqlite"  # audit log of approved/rejected decisions
     dry_run: bool = False
     temperature: float = 0.0
 

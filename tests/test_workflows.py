@@ -14,9 +14,9 @@ def test_make_reservation_creates_guest_then_books(pms: PMS):
     assert result.ok, result.error
     steps = [s["tool"] for s in result.steps]
     assert steps == ["create_guest", "quote_rate", "create_reservation"]
-    assert result.data["reservation"]["status"] == "confirmed"
+    assert result.data["reservation"]["status"] == "confirmed" # type: ignore
     # RT002 + RP002, 2 nights, 2 adults: 1800*2 + 250*2*2 = 4600.
-    assert result.data["reservation"]["total_amount"] == 4600
+    assert result.data["reservation"]["total_amount"] == 4600 # type: ignore
 
 
 def test_make_reservation_reuses_existing_guest(pms: PMS):
@@ -27,14 +27,14 @@ def test_make_reservation_reuses_existing_guest(pms: PMS):
     })
     assert result.ok
     assert result.steps[0]["tool"] == "get_guest"  # reused, not created
-    assert result.data["guest"]["id"] == "G001"
+    assert result.data["guest"]["id"] == "G001" # type: ignore
 
 
 def test_cancel_booking_refuses_non_refundable(pms: PMS):
     # RES002 is on RP003 (non-refundable) — the workflow must refuse (defense in depth).
     result = cancel_booking(pms, {"reservation_id": "RES002"})
     assert not result.ok
-    assert "non-refundable" in result.error.lower()
+    assert "non-refundable" in result.error.lower() # type: ignore
     assert pms.get_reservation("RES002")["status"] == "confirmed"  # untouched
 
 

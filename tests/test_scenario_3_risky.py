@@ -10,11 +10,11 @@ def _refund_model() -> ScriptedModel:
         intent="refund_request",
         sender_email="maria.gonzalez@email.com",
         reservation_id="RES002",
-    )
+    ) # type: ignore
     # Even if the model were tricked into proposing a cancel, the guardrail must strip it.
     plan = Plan(
         summary="Guest wants a refund on RES002 (non-refundable).",
-        actions=[PlanAction(workflow="cancel_booking", args={"reservation_id": "RES002"})],
+        actions=[PlanAction(workflow="cancel_booking", args={"reservation_id": "RES002"})], # type: ignore
         draft_reply="Thank you — your request has been forwarded to our reservations team.",
     )
     return ScriptedModel(parsed, plan)
