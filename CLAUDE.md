@@ -202,8 +202,12 @@ Sidebar toggles mirror the flags above (mode, provider, data path, dry-run).
 ## 8. Conventions
 
 - Prompts live in `prompts/` as separate files; keep them minimal and explicit.
-- Every tool is a pure function over the loaded PMS. **Writes mutate an in-memory copy**
-  (optionally snapshotted to a run file) — never the original `mock_hotel_data.json`.
+- Every tool is a pure function over the loaded PMS. **Writes mutate an in-memory copy.**
+  They are persisted back to the data file (`PMS.save`) only by the *service layer*, and only
+  after an approved, non-dry-run write on a persistent (non-memory) checkpointer — so the
+  dashboard reflects real bookings while **unit tests (memory backend) and dry-run never touch
+  the seed**. (Reverses the original "never mutate the original" rule, per an explicit request;
+  `git checkout data/` restores the seed.)
 - Add or extend a scenario test whenever you change behavior.
 - Don't introduce a new abstraction unless it removes real duplication. Match the timebox.
 

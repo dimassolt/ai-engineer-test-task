@@ -2,10 +2,12 @@
 
 A thin client over `service.py` (no backend logic lives here) that makes the agent's
 work *visible*:
+- the guest **conversation** sits at the top and drives everything (chat-first);
 - the graph pipeline lights up **live** as each node runs (via `stream_run`);
-- a decision log + the read-only tools it called show *how* it reasoned;
-- a clear indicator says whether it wrote to the PMS or not;
-- you can **continue the conversation** with follow-up guest messages;
+- "System state" shows the decision log, risk assessment, and plan for the current turn;
+- a clear indicator says whether the agent wrote to the PMS or not (and the PMS view
+  refreshes when it does);
+- rejected replies are never sent — the dialog can't be continued until you start over;
 - a SQLite **decision history** lists every approved / disapproved answer.
 
 Guest-facing messages render as friendly email cards, not code blocks.
@@ -43,7 +45,7 @@ if LOGO.exists():
 
 @st.cache_data(show_spinner=False)
 def load_pms(path: str) -> dict:
-    """Load the mock PMS JSON for the read-only explorer (cached per path)."""
+    """Load the mock PMS JSON for the read-only explorer (cached; cleared after a write)."""
     try:
         return json.loads(Path(path).read_text())
     except Exception:  # noqa: BLE001 — explorer is best-effort
@@ -247,6 +249,23 @@ def build_agent_input(conversation: list[dict], new_msg: str) -> str:
     )
 
 
+def finish_turn(pending: dict, result: RunResult | None) -> None:
+    """Update the conversation transcript after a streamed turn settles."""
+    if result is None:
+        return
+    convo = st.session_state.conversation
+    if pending.get("reset"):
+        convo.clear()
+    if pending["kind"] == "run":
+        convo.append({"role": "guest", "text": pending["display"]})
+        draft = result.state.get("draft_reply")
+        if draft:
+            convo.append({"role": "agent", "text": draft})
+    elif pending["kind"] == "resume" and pending.get("edited_reply"):
+        if convo and convo[-1]["role"] == "agent":
+            convo[-1]["text"] = pending["edited_reply"]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Sidebar — settings + branding
 # ─────────────────────────────────────────────────────────────────────────────
@@ -280,13 +299,13 @@ hotel_name = (pms_data.get("hotel") or {}).get("name", "Grand Oslo Hotel")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Header + new-email input (starts a fresh conversation)
+# Header
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.title(f":material/concierge: {hotel_name} — email agent")
 st.caption(
-    "Reads an inbound guest email, reasons over the PMS with read-only tools, drafts a "
-    "reply, and executes actions — with a human approval gate. Watch it think below."
+    "Chat as a guest below. The agent reasons over the PMS with read-only tools, drafts a "
+    "reply, and (after approval) writes to the PMS — watch its state and reasoning update live."
 )
 
 EXAMPLES = {
@@ -297,64 +316,103 @@ EXAMPLES = {
                       "— Maria (maria.gonzalez@email.com)",
 }
 
-st.session_state.setdefault("email_text", "")
 st.session_state.setdefault("conversation", [])
-
-
-def _load_example() -> None:
-    choice = st.session_state.get("example_choice")
-    if choice:
-        st.session_state.email_text = EXAMPLES[choice]
-
-
-with st.container(border=True):
-    st.markdown(":material/mail: **New guest email** (starts a fresh conversation)")
-    st.segmented_control(
-        "Load an example scenario",
-        list(EXAMPLES),
-        key="example_choice",
-        on_change=_load_example,
-        label_visibility="collapsed",
-    )
-    st.text_area(
-        "Inbound guest email",
-        key="email_text",
-        height=140,
-        placeholder="Paste a guest email, or load an example above…",
-        label_visibility="collapsed",
-    )
-    if st.button("Analyze email", type="primary", icon=":material/send:") and st.session_state.email_text.strip():
-        st.session_state.pending = {
-            "kind": "run", "agent_input": st.session_state.email_text,
-            "display": st.session_state.email_text, "reset": True,
-        }
-        st.rerun()
+result: RunResult | None = st.session_state.get("result")
+busy = bool(st.session_state.get("pending"))          # a turn is streaming this rerun
+awaiting = result is not None and result.awaiting_approval
+rejected = result is not None and result.status == "rejected"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# System state — live pipeline while a run streams, settled strip otherwise
+# Conversation (dialog) — top of the dashboard, drives everything
+# ─────────────────────────────────────────────────────────────────────────────
+
+head_l, head_r = st.columns([4, 1], vertical_alignment="center")
+head_l.subheader(":material/forum: Conversation")
+if head_r.button("New conversation", icon=":material/refresh:", disabled=busy, width="stretch"):
+    for k in ("conversation", "result", "reply_edit"):
+        st.session_state.pop(k, None)
+    st.session_state.conversation = []
+    st.rerun()
+
+convo = st.session_state.conversation
+with st.container(border=True):
+    if not convo and not busy:
+        st.caption("Start the conversation — type a guest email below, or try an example:")
+        for col, (name, text) in zip(st.columns(len(EXAMPLES)), EXAMPLES.items()):
+            if col.button(name, width="stretch"):
+                st.session_state.pending = {"kind": "run", "agent_input": text, "display": text, "reset": True}
+                st.rerun()
+
+    for turn in convo:
+        with st.chat_message("user" if turn["role"] == "guest" else "assistant"):
+            st.markdown(turn["text"].replace("\n", "  \n"))
+
+    preview = st.session_state.get("pending")  # show the in-flight message while it streams
+    if preview and preview.get("kind") == "run":
+        with st.chat_message("user"):
+            st.markdown(preview["display"].replace("\n", "  \n"))
+        with st.chat_message("assistant"):
+            st.caption("Thinking…")
+
+    placeholder = (
+        "Resolve the pending approval to continue…" if awaiting
+        else "Reply rejected — start a new conversation to continue" if rejected
+        else "Message as the guest…"
+    )
+    msg = st.chat_input(placeholder, disabled=busy or awaiting or rejected)
+    if msg:
+        st.session_state.pending = {
+            "kind": "run",
+            "agent_input": build_agent_input(convo, msg),
+            "display": msg, "reset": not convo,
+        }
+        st.rerun()
+
+if rejected:
+    st.caption(
+        ":material/block: The drafted reply was rejected and never sent — "
+        "start a new conversation to continue."
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Approval panel — right under the dialog, on the current turn
+# ─────────────────────────────────────────────────────────────────────────────
+
+if result is not None and not busy and result.awaiting_approval:
+    req = result.approval_request or {}
+    with st.container(border=True):
+        st.markdown(":material/pause_circle: **Awaiting your approval**")
+        if req.get("reason") == "risky_request":
+            st.warning("Flagged as risky — cannot be executed autonomously.", icon=":material/gpp_maybe:")
+        else:
+            st.info("Human-in-the-loop mode — review the plan and reply before it runs.",
+                    icon=":material/how_to_reg:")
+        edited = st.text_area(
+            "Edit the reply before sending (optional)",
+            value=result.state.get("draft_reply", ""), key="reply_edit", height=180,
+        )
+        approve, reject_col = st.columns(2)
+        if approve.button("Approve & send", type="primary", icon=":material/check:", width="stretch"):
+            st.session_state.pending = {
+                "kind": "resume", "thread_id": result.thread_id, "approved": True, "edited_reply": edited,
+            }
+            st.rerun()
+        if reject_col.button("Reject", icon=":material/close:", width="stretch"):
+            st.session_state.pending = {
+                "kind": "resume", "thread_id": result.thread_id, "approved": False,
+            }
+            st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# System state — live pipeline, PMS-write indicator, decision log, risk, plan
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.subheader(":material/account_tree: System state")
 
-
-def finish_turn(pending: dict, result: RunResult | None) -> None:
-    """Update the conversation transcript after a streamed turn settles."""
-    if result is None:
-        return
-    convo = st.session_state.conversation
-    if pending.get("reset"):
-        convo.clear()
-    if pending["kind"] == "run":
-        convo.append({"role": "guest", "text": pending["display"]})
-        draft = result.state.get("draft_reply")
-        if draft:
-            convo.append({"role": "agent", "text": draft})
-    elif pending["kind"] == "resume" and pending.get("edited_reply"):
-        if convo and convo[-1]["role"] == "agent":
-            convo[-1]["text"] = pending["edited_reply"]
-
-
+# Process a queued turn: stream it live, then settle via a rerun.
 pending = st.session_state.pop("pending", None)
 if pending:
     status_ph = st.empty()
@@ -364,31 +422,28 @@ if pending:
         gen = stream_run(pending["agent_input"], settings, pending.get("thread_id"))
     result = _guard(consume_stream, gen, status_ph)
     finish_turn(pending, result)
+    # The service persists PMS writes to the data file; drop the cached view so it reloads.
+    if result and not result.awaiting_approval:
+        st_ = result.state
+        if not st_.get("dry_run") and any(r.get("ok") for r in st_.get("execution", [])):
+            load_pms.clear()
     st.session_state.result = result
     st.session_state.pop("reply_edit", None)
     st.rerun()
 
-result: RunResult | None = st.session_state.get("result")
 render_pipeline(result)
-if result is not None:
-    label, color, icon = write_indicator(result)
-    st.badge(label, icon=icon, color=color)
+
+if result is None:
+    st.badge("Idle — start a conversation above", icon=":material/bedtime:", color="grey")
 else:
-    st.caption("Pipeline is idle — analyze an email to see each stage light up.")
-    with st.expander("Hotel data (read-only PMS)", icon=":material/inventory_2:"):
-        render_pms_explorer()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Results for the latest turn
-# ─────────────────────────────────────────────────────────────────────────────
-
-if result is not None:
     s = result.state
     parsed = s.get("parsed", {})
-    plan = s.get("plan", {})
     risk_flags = s.get("risk_flags", [])
+    plan = s.get("plan", {})
     actions = plan.get("actions", []) or []
+
+    label, color, icon = write_indicator(result)
+    st.badge(label, icon=icon, color=color)
 
     with st.container(horizontal=True):
         st.metric("Intent", _pretty(parsed.get("intent")), border=True)
@@ -397,61 +452,53 @@ if result is not None:
         st.metric("Mode", "Autonomous" if s.get("mode") == "auto" else "Human", border=True)
         st.metric("Status", _pretty(result.status), border=True)
 
-    # Approval panel (prominent, above the detail tabs)
-    if result.awaiting_approval:
-        req = result.approval_request or {}
-        reason = req.get("reason", "human_mode")
-        with st.container(border=True):
-            st.markdown(":material/pause_circle: **Awaiting your approval**")
-            if reason == "risky_request":
-                st.warning(
-                    "This request was flagged as risky and cannot be executed autonomously.",
-                    icon=":material/gpp_maybe:",
-                )
-            else:
-                st.info("Human-in-the-loop mode — review the plan and reply before it runs.",
-                        icon=":material/how_to_reg:")
-            edited = st.text_area(
-                "Edit the reply before sending (optional)",
-                value=s.get("draft_reply", ""), key="reply_edit", height=180,
-            )
-            approve, reject = st.columns(2)
-            if approve.button("Approve & execute", type="primary", icon=":material/check:"):
-                st.session_state.pending = {
-                    "kind": "resume", "thread_id": result.thread_id,
-                    "approved": True, "edited_reply": edited,
-                }
-                st.rerun()
-            if reject.button("Reject", icon=":material/close:"):
-                st.session_state.pending = {
-                    "kind": "resume", "thread_id": result.thread_id, "approved": False,
-                }
-                st.rerun()
-    elif result.status == "rejected":
-        st.error("Run rejected by the reviewer — no writes were performed.", icon=":material/block:")
-    else:
-        st.success(f"Run {result.status.replace('_', ' ')}.", icon=":material/task_alt:")
-
-    reasoning_tab, plan_tab, exec_tab, data_tab = st.tabs([
-        "Reasoning", "Plan & reply", "Execution", "Hotel data",
-    ])
-
-    # -- Reasoning: how the agent thinks --
-    with reasoning_tab:
-        st.markdown("#### :material/menu_book: Decision log")
-        st.caption("One line per graph node — the trail of decisions this run made.")
+    log_col, risk_col = st.columns(2)
+    with log_col, st.container(border=True):
+        st.markdown(":material/menu_book: **Decision log**")
         log = s.get("log", [])
         if log:
-            with st.container(border=True):
-                for i, line in enumerate(log, 1):
-                    st.markdown(f":material/chevron_right: **{i}.** {line}")
+            for i, line in enumerate(log, 1):
+                st.markdown(f":material/chevron_right: **{i}.** {line}")
         else:
             st.caption("No log entries.")
+    with risk_col, st.container(border=True):
+        st.markdown(":material/shield: **Risk assessment**")
+        if risk_flags:
+            for f in risk_flags:
+                st.warning(f"**{f['code']}** — {f['reason']}", icon=":material/gpp_maybe:")
+        else:
+            st.success("No risk flags — safe to automate.", icon=":material/verified_user:")
 
-        st.markdown("#### :material/psychology: Reasoning trace (read-only tools)")
+    with st.container(border=True):
+        st.markdown(":material/task: **Plan**")
+        if plan.get("summary"):
+            st.caption(plan["summary"])
+        if actions:
+            for a in actions:
+                st.markdown(f":material/bolt: **{a['workflow']}** — {a.get('rationale', '')}")
+                if a.get("args"):
+                    st.json(a["args"])
+        else:
+            st.caption("Read-only request — no write actions planned.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Details — reasoning trace, reply, execution, hotel data
+# ─────────────────────────────────────────────────────────────────────────────
+
+if result is None:
+    with st.expander("Hotel data (read-only PMS)", icon=":material/inventory_2:"):
+        render_pms_explorer()
+else:
+    s = result.state
+    parsed = s.get("parsed", {})
+    trace_tab, reply_tab, exec_tab, data_tab = st.tabs([
+        "Reasoning trace", "Reply", "Execution", "Hotel data",
+    ])
+
+    with trace_tab:
         st.caption(
-            "While planning, the agent runs a ReAct loop using only read tools — this is the "
-            "information it gathered before drafting. No writes happen here."
+            "The ReAct loop — read-only tools the agent called while planning. No writes here."
         )
         trace = s.get("tool_trace", [])
         if trace:
@@ -471,9 +518,8 @@ if result is not None:
         else:
             st.caption("No tools were needed for this request.")
 
-    # -- Plan & reply --
-    with plan_tab:
-        st.markdown("#### :material/description: What the guest asked")
+    with reply_tab:
+        st.markdown(":material/description: **What the guest asked**")
         with st.container(border=True):
             st.markdown(parsed.get("summary") or "_No summary._")
             field_labels = {
@@ -488,34 +534,21 @@ if result is not None:
                 for idx, (lbl, val) in enumerate(present):
                     cols[idx % 2].markdown(f"**{lbl}:** {val}")
 
-        st.markdown("#### :material/shield: Risk assessment")
-        if risk_flags:
-            for f in risk_flags:
-                st.warning(f"**{f['code']}** — {f['reason']}", icon=":material/gpp_maybe:")
-        else:
-            st.success("No risk flags — safe to automate.", icon=":material/verified_user:")
-
-        st.markdown("#### :material/task: Planned actions")
-        if actions:
-            st.caption(plan.get("summary", ""))
-            for a in actions:
-                with st.container(border=True):
-                    st.markdown(f":material/bolt: **{a['workflow']}**")
-                    if a.get("rationale"):
-                        st.caption(a["rationale"])
-                    if a.get("args"):
-                        st.json(a["args"])
-        else:
-            st.caption("Read-only request — no write actions planned.")
-
-        st.markdown("#### :material/mail: Draft reply")
         render_message(
             s.get("draft_reply", ""),
             to=parsed.get("sender_email"),
             subject="Re: your enquiry — Grand Oslo Hotel",
         )
+        sent = s.get("sent")
+        if sent:
+            verb = "would be sent (dry run)" if sent.get("dry_run") else "sent"
+            render_message(
+                sent.get("body", ""),
+                to=sent.get("to"), subject=sent.get("subject"),
+                title=f"Reply {verb}", icon=":material/outgoing_mail:",
+                caption=f"At {sent.get('sent_at', '')}",
+            )
 
-    # -- Execution --
     with exec_tab:
         execution = s.get("execution", [])
         if execution:
@@ -530,44 +563,9 @@ if result is not None:
         else:
             st.caption("No write actions were executed for this request.")
 
-        sent = s.get("sent")
-        if sent:
-            verb = "would be sent (dry run)" if sent.get("dry_run") else "sent"
-            render_message(
-                sent.get("body", ""),
-                to=sent.get("to"),
-                subject=sent.get("subject"),
-                title=f"Reply {verb}",
-                icon=":material/outgoing_mail:",
-                caption=f"At {sent.get('sent_at', '')}",
-            )
-
-    # -- Hotel data --
     with data_tab:
+        st.caption("Live view of the mock PMS — updates when the agent books, modifies, or cancels.")
         render_pms_explorer()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Conversation — transcript + follow-up (continue the dialog)
-# ─────────────────────────────────────────────────────────────────────────────
-
-if st.session_state.conversation:
-    st.subheader(":material/forum: Conversation")
-    with st.container(border=True):
-        for turn in st.session_state.conversation:
-            role = "user" if turn["role"] == "guest" else "assistant"
-            with st.chat_message(role):
-                st.markdown(turn["text"].replace("\n", "  \n"))
-        followup = st.chat_input("Send a follow-up as the guest…", disabled=result is not None and result.awaiting_approval)
-        if followup:
-            st.session_state.pending = {
-                "kind": "run",
-                "agent_input": build_agent_input(st.session_state.conversation, followup),
-                "display": followup, "reset": False,
-            }
-            st.rerun()
-    if result is not None and result.awaiting_approval:
-        st.caption("Resolve the pending approval above before continuing the conversation.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -581,19 +579,19 @@ if not rows:
     st.caption("No decisions recorded yet. Completed runs will appear here.")
 else:
     approved = [r for r in rows if r["approved"]]
-    rejected = [r for r in rows if not r["approved"]]
+    disapproved = [r for r in rows if not r["approved"]]
     wrote = [r for r in rows if r["wrote_pms"]]
     with st.container(horizontal=True):
         st.metric("Total", len(rows), border=True)
         st.metric("Approved", len(approved), border=True)
-        st.metric("Disapproved", len(rejected), border=True)
+        st.metric("Disapproved", len(disapproved), border=True)
         st.metric("Wrote to PMS", len(wrote), border=True)
 
     choice = st.segmented_control(
         "Filter decisions", ["All", "Approved", "Disapproved"], default="All",
         label_visibility="collapsed",
     ) or "All"
-    view = {"Approved": approved, "Disapproved": rejected}.get(choice, rows)
+    view = {"Approved": approved, "Disapproved": disapproved}.get(choice, rows)
     st.dataframe(
         [
             {

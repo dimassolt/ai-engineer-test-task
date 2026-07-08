@@ -6,26 +6,32 @@ module makes that decision *deterministically* (no LLM), so it is reliable and u
 testable. `classify` calls `assess_risk`; if it returns any flag, the approval gate forces
 a human review even in `auto` mode.
 
-Two complementary signals are used so the guard is hard to slip past:
-1. **Keyword signals** on the raw email text (refund / chargeback / dispute ...). Robust
-   even if intent parsing is wrong.
+Scope: the financial/refund and non-refundable checks apply **only to changes to an existing
+booking** (modify / cancel / refund). A **new booking is a normal request and always
+proceeds** — even when the guest picks a non-refundable rate (that is a rate *choice*, not a
+refund). Two complementary signals catch the risky changes:
+1. **Keyword signals** on the raw email text (refund / chargeback / dispute ...), matched on
+   word boundaries so "non-refundable" never trips "refund".
 2. **Data signals** from the PMS (the guest's booking is on a non-refundable rate). Precise
    when we can identify the reservation.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from ..tools.pms import PMS
 
-# Financial / dispute language → always route to a human.
-_FINANCIAL_KEYWORDS = (
-    "refund", "charge back", "chargeback", "compensation", "compensate",
-    "reimburse", "money back", "waive", "dispute", "cancel the charge",
+# Financial / dispute language → route an existing-booking change to a human. Word-boundary
+# matched, so "non-refundable" (a valid rate choice when booking) never matches "refund".
+_FINANCIAL_RE = re.compile(
+    r"\b(refunds?|charge ?backs?|compensat(?:e|ion)|reimburse\w*|money back|"
+    r"waive\w*|disput\w*|cancel the charge)\b",
+    re.IGNORECASE,
 )
 
-# Intents that touch an existing booking (so a non-refundable rate is relevant).
+# Intents that touch an existing booking (where a non-refundable rate / refund is relevant).
 _CHANGE_INTENTS = {"cancel_booking", "modify_booking", "refund_request"}
 _AMBIGUOUS_INTENTS = {"other", "unknown", "ambiguous", ""}
 
@@ -44,20 +50,27 @@ def assess_risk(
     sender_email: str | None = None,
     reservation_id: str | None = None,
 ) -> list[RiskFlag]:
-    """Return risk flags for a parsed email. Empty list == safe to automate."""
+    """Return risk flags for a parsed email. Empty list == safe to automate.
+
+    New bookings (and availability/policy questions) are never flagged here — only changes
+    to an existing reservation can be risky.
+    """
     flags: list[RiskFlag] = []
     low = (text or "").lower()
 
-    # 1) Financial / dispute language.
-    hit = next((kw for kw in _FINANCIAL_KEYWORDS if kw in low), None)
-    if hit or intent == "refund_request":
-        flags.append(RiskFlag(
-            "financial_request",
-            f"Mentions a financial/refund action ('{hit or 'refund'}') — needs human review.",
-        ))
-
-    # 2) Change/cancel against a non-refundable booking (data signal).
+    # Financial/refund + non-refundable checks: only for changes to an existing booking.
+    # A create request always passes this gate.
     if intent in _CHANGE_INTENTS:
+        # 1) Financial / dispute language (or an explicit refund intent).
+        match = _FINANCIAL_RE.search(low)
+        if match or intent == "refund_request":
+            hit = match.group(0) if match else "refund"
+            flags.append(RiskFlag(
+                "financial_request",
+                f"Mentions a financial/refund action ('{hit}') — needs human review.",
+            ))
+
+        # 2) Change/cancel against a non-refundable booking (data signal).
         reservations = []
         if reservation_id:
             try:
@@ -75,14 +88,12 @@ def assess_risk(
                 ))
                 break
 
-    # 2b) The guest themselves calls the booking non-refundable (text signal).
-    if intent in _CHANGE_INTENTS and "non-refundable" in low and not any(
-        f.code == "non_refundable_change" for f in flags
-    ):
-        flags.append(RiskFlag(
-            "non_refundable_change",
-            "Request references a non-refundable booking — not automatable.",
-        ))
+        # 2b) The guest themselves calls the existing booking non-refundable (text signal).
+        if "non-refundable" in low and not any(f.code == "non_refundable_change" for f in flags):
+            flags.append(RiskFlag(
+                "non_refundable_change",
+                "Request references a non-refundable booking — not automatable.",
+            ))
 
     # 3) Ambiguous / unclassifiable intent.
     if intent in _AMBIGUOUS_INTENTS:

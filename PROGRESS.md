@@ -4,7 +4,7 @@ Single source of truth for build status. Read at the start of each session; upda
 each meaningful change. See `CLAUDE.md` §6 for the protocol. Keep entries to one line each.
 
 - **Status legend:** `[ ]` not started · `[~]` in progress · `[x]` done
-- **Current phase:** Phase 12 — Dashboard: live state, dialog, PMS-write indicator, decisions DB `[x]` (remaining deliverable: walkthrough recording)
+- **Current phase:** Phase 14 — Booking correctness: guardrail scope, details, availability `[x]` (remaining deliverable: walkthrough recording)
 - **Last updated:** 2026-07-08
 
 ---
@@ -95,6 +95,28 @@ Second dashboard pass. Backend additions stay minimal and reuse existing state.
 - [x] Verified: pytest 20/20; offline AppTest (idle/completed/awaiting/conversation); live stream (auto read-only + human pause→resume write) — decision recorded only at terminal, `wrote_pms` correct
 - **Done:** all features work live; recording gated to non-memory checkpointer (tests unaffected).
 
+### Phase 13 — Dashboard: chat-first, PMS persistence, richer state  `[x]`
+- [x] PMS writes persist to the data JSON (`PMS.save`); service persists after approved non-dry-run
+      writes, gated to non-memory checkpointer; dashboard clears the cached PMS view so it refreshes
+- [x] Dialog moved to the top (chat-first): transcript + example quick-starts + follow-up input + New conversation
+- [x] Rejected reply blocks continuing the dialog (chat input disabled until New conversation); awaiting also disables
+- [x] "System state" now shows decision log + risk assessment + plan inline (plus pipeline + write badge + KPIs)
+- [x] Verified: pytest 20/20 (seed JSON hash unchanged), AppTest 4 paths (rejected/awaiting → input disabled),
+      live persist to a temp seed copy (RES007 + guest added)
+- **Done:** all four requests implemented and verified.
+
+### Phase 14 — Booking correctness: guardrail scope, details, availability  `[x]`
+- [x] Guardrail no longer flags **new bookings**: financial/refund + non-refundable checks apply only to
+      change intents (modify/cancel/refund); word-boundary regex so "non-refundable" ≠ "refund"
+- [x] Planner prompt: a booking must gather first/last name + email (required), phone + nationality when
+      given; reuse existing guest by email; if required details missing → ask, schedule no action
+- [x] Planner prompt: if the requested option is unavailable for the dates → schedule NO action, reply that
+      it's taken and suggest `find_availability` alternatives; never book an unavailable option
+- [x] Tests decoupled from the mutable runtime PMS via `tests/fixtures/mock_hotel_data.json` (pristine seed)
+- [x] Verified: pytest 22/22; live — non-refundable booking proceeds (risky=False, books RT002/RP003);
+      taken double (Apr 22-24) refused with alternatives, no booking created
+- **Done:** all three requests implemented and verified live.
+
 ---
 
 ## Session log
@@ -108,6 +130,14 @@ Second dashboard pass. Backend additions stay minimal and reuse existing state.
   reply, PMS explorer, editable approval reply. Guest messages render as friendly email cards
   (not code). Verified offline via `AppTest` (3 render paths) + clean live boot. Still a thin
   client over `service.py`.
+- 2026-07-09 — Phase 14: guardrail no longer flags new bookings (financial/non-refundable checks
+  scoped to change intents; word-boundary regex); planner prompt now gathers guest details and
+  refuses unavailable options with alternatives; tests read a pristine fixture, not the mutable
+  runtime PMS. pytest 22/22; both booking behaviors verified live.
+- 2026-07-08 — Phase 13: dashboard is now chat-first (dialog on top); PMS writes persist to the
+  data JSON (`PMS.save`, service-gated to non-memory + non-dry-run); System state shows decision
+  log/risk/plan inline; rejected replies block continuing the dialog. pytest 20/20 (seed hash
+  unchanged), AppTest 4 paths, live persist verified on a temp seed copy.
 - 2026-07-08 — Phase 12: added live streaming (`stream_run`/`stream_resume`) so the dashboard
   pipeline lights up per node; Altek favicon; `log` reducer (accumulates trail); PMS-write
   indicator badge; continue-dialog chat (context passed to follow-ups); SQLite decision audit
@@ -154,6 +184,18 @@ Second dashboard pass. Backend additions stay minimal and reuse existing state.
 - 2026-07-08 — **Reversed the earlier "no feedback store" cut** — the task now asks for it. Added a
   minimal stdlib-`sqlite3` audit log (`history.py`), separate from the LangGraph checkpointer.
   Recording is best-effort and gated to non-memory checkpointers so tests/offline runs stay clean.
+- 2026-07-08 — **PMS writes now persist to the data JSON** (reverses CLAUDE.md §8 "never the
+  original", at the user's request so the dashboard reflects bookings). `PMS.save()` persists;
+  the *service* calls it only after an approved, non-dry-run write, and only for non-memory
+  checkpointers — so unit tests (memory backend, in-graph) and dry-run never mutate the seed
+  (verified: seed hash unchanged across pytest). Reset the seed with `git checkout data/`.
+- 2026-07-09 — **Guardrail scope: new bookings always proceed.** Financial/refund + non-refundable
+  risk checks now run only for change intents (modify/cancel/refund). Picking a non-refundable rate
+  when *booking* is a normal choice, not a refund — fixed the false positive where "refund" matched
+  inside "non-refundable" (now word-boundary regex). Only modify/cancel of an existing booking is gated.
+- 2026-07-09 — **Tests read a pristine fixture, not `data/mock_hotel_data.json`.** Once the app
+  persists writes to that file, reading it in tests would be non-deterministic; `tests/fixtures/`
+  holds a frozen seed copy so tests stay stable while the runtime PMS is free to change.
 
 ## Known issues / TODO
 

@@ -20,7 +20,10 @@ from hotel_agent.graph.build import build_graph
 from hotel_agent.graph.state import ParsedEmail, Plan
 from hotel_agent.tools.pms import PMS
 
-DATA_PATH = str(Path(__file__).resolve().parents[1] / "data" / "mock_hotel_data.json")
+# A pristine, dedicated copy of the seed — NOT the app's runtime `data/mock_hotel_data.json`,
+# which the service now mutates on approved writes. Tests read this fixture so they stay
+# deterministic regardless of any bookings made through the CLI/UI.
+DATA_PATH = str(Path(__file__).resolve().parent / "fixtures" / "mock_hotel_data.json")
 
 
 class _Structured:

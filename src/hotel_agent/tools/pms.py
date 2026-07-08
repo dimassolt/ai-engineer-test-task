@@ -50,10 +50,23 @@ class PMS:
         self._data = copy.deepcopy(data)
         self._room_types = {rt["id"]: rt for rt in self._data.get("room_types", [])}
         self._rate_plans = {rp["id"]: rp for rp in self._data.get("rate_plans", [])}
+        self._source_path: Path | None = None  # set by from_file; enables save()
 
     @classmethod
     def from_file(cls, path: str | Path) -> "PMS":
-        return cls(json.loads(Path(path).read_text()))
+        pms = cls(json.loads(Path(path).read_text()))
+        pms._source_path = Path(path)
+        return pms
+
+    def save(self, path: str | Path | None = None) -> None:
+        """Persist the current state back to JSON (defaults to the file it was loaded from).
+
+        Off by default — the service only calls this after an approved, non-dry-run write, so
+        the mock PMS file reflects reservations the agent actually made."""
+        target = path or self._source_path
+        if target is None:
+            raise PMSError("No path to save the PMS to (loaded from a dict, not a file).")
+        Path(target).write_text(json.dumps(self._data, indent=2, ensure_ascii=False))
 
     # ---- reference data -------------------------------------------------------------
 

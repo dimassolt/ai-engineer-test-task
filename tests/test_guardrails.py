@@ -29,3 +29,20 @@ def test_plain_availability_question_is_clear(pms: PMS):
 def test_ambiguous_intent_is_flagged(pms: PMS):
     flags = assess_risk(intent="other", text="Hello, a question", pms=pms)
     assert any(f.code == "ambiguous" for f in flags)
+
+
+def test_new_booking_on_non_refundable_rate_is_not_flagged(pms: PMS):
+    # Booking a non-refundable option is a normal request — 'refund' inside 'non-refundable'
+    # must NOT trip the financial guard, and a create is never routed to a human for this.
+    flags = assess_risk(
+        intent="new_booking",
+        text="I'd like to book the non-refundable double for April 20-22, 2 adults.",
+        pms=pms,
+    )
+    assert not is_risky(flags)
+
+
+def test_new_booking_is_not_blocked_by_financial_keywords(pms: PMS):
+    # Only modify/cancel/refund are gated; a create always proceeds.
+    flags = assess_risk(intent="new_booking", text="Please book and I'll pay the full charge.", pms=pms)
+    assert not any(f.code == "financial_request" for f in flags)
