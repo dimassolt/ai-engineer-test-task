@@ -36,7 +36,7 @@ PROVIDER_MODEL_PROVIDER: dict[str, str] = {
 DEFAULT_MODELS: dict[str, str] = {
     "openai": "gpt-4o-mini",
     "anthropic": "claude-sonnet-4-6",
-    "gemini": "gemini-2.0-flash",
+    "gemini": "gemini-3.1-flash-lite",
 }
 
 # Preference order when `--provider auto` is used.
