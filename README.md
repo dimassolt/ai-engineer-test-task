@@ -339,5 +339,3 @@ the real graph — including both approval modes and the risky-in-auto pause.
 - **A FastAPI backend** to connect DB and manage requests with API and build integrations with other services.
 - **Real connections to PMS and Email** including implementation and integration tests.  
 - **Better UI** cleaner design is better. 
-- **Test local models for tool calling** powerfull flagship models can be used for initial reasoning and parsing and evaluation, but tool calling and intermediate results could be done by tiny local LMs.
-```
