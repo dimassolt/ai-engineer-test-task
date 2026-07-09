@@ -75,7 +75,7 @@ def make_graph(pms):
     def _factory(model: ScriptedModel):
         settings = Settings(checkpointer="memory", data_path=DATA_PATH)
         graph, bound_pms = build_graph(
-            settings, model=model, pms=pms, checkpointer=MemorySaver()
+            settings, model=model, pms=pms, checkpointer=MemorySaver() #type: ignore
         )
         return graph, bound_pms
 
