@@ -210,7 +210,7 @@ sequenceDiagram
     SVC-->>G: draft or final reply
 ```
 
-### Tools vs. skills/workflows (the part the task grades hardest)
+### Tools vs. skills/workflows 
 
 - **Tools** (`tools/pms.py`, exposed read-only via `tools/read_tools.py`) — *atomic* PMS
   operations, one responsibility each: `find_availability`, `quote_rate`, `get_guest`,
@@ -329,10 +329,14 @@ the real graph — including both approval modes and the risky-in-auto pause.
 
 ## What I'd add next
 
-- **Slot-filling for missing info** (e.g. no dates/party size) — a clarifying-reply branch
-  instead of a best-effort plan.
-- **Use the decision log for eval** — the approve/reject audit trail is already captured; the
-  next step is turning it into a labelled set for offline evaluation / fine-tuning.
+- **Improve user management** Now LLM does not check identity of the user before the executing his commands IAM policy needed.
+- **Bug fix** LLM may not return results (Gemini behavior, Claude unavailability), make a retry loop and introduce helth checks, possible fallback to other models.  
+- **Defoult models** needs to be automated detection of supported models, now they are hardcoded. 
+- **Test RLM/hybrid agent architecture** use strong foundation of python workflow, it can provide more context for the task execution and long dialog threads.
+- **Use the decision log for eval** — the approve/reject audit trail is already captured, the
+  next step is turning it into a labelled set for offline evaluation / fine-tuning / memory.
 - **Richer availability** (partial-stay suggestions, alternative dates) and multi-room bookings.
-- **A FastAPI surface** if a web/multi-user deployment were actually needed.
+- **A FastAPI backend** to connect DB and manage requests with API and build integrations with other services.
+- **Real connections to PMS and Email** including implementation and integration tests.  
+- **Test local models for tool calling** powerfull flagship models can be used for initial reasoning and parsing and evaluation, but tool calling and intermediate results could be done by tiny local LMs.
 ```
