@@ -82,13 +82,15 @@ Each case can be replayed through the CLI, comparing output to `expected`:
 python -m hotel_agent -e "Hi, do you have any rooms available from 20 to 22 April?" --show-plan
 
 # write (Scenario 2), autonomous, no real mutation
-python -m hotel_agent -e "<TQ08 email>" --mode auto --dry-run --json
+# python -m hotel_agent -e "<TQ08 email>" --mode auto --json
+# Example:
+python -m hotel_agent -e "For booking RES001, can we switch to the breakfast-included rate? — Erik Hansen" --mode auto --json
 
 # risky (Scenario 3) — must pause even in auto mode
-python -m hotel_agent -e "<TQ15 email>" --mode auto --json
+# python -m hotel_agent -e "<TQ15 email>" --mode auto --json
+# Example
+python -m hotel_agent -e "I need a refund on my booking RES002, we can't make it. — Maria Gonzalez (maria.gonzalez@email.com)" --mode auto --json
 ```
 
-Use `--json` for machine-readable output to diff against the gold standard, and `--dry-run`
-to check mutations without committing them. The deterministic parts (`risk.flags`,
-`plan_actions`, `pms_mutation`) can be asserted exactly; the free-text reply is checked with
-`reply_must_include` / `reply_must_not`.
+Use `--json` for machine-readable output to diff against the gold standard
+The deterministic parts (`risk.flags`,`plan_actions`, `pms_mutation`) can be asserted exactly; the free-text reply is checked with `reply_must_include` / `reply_must_not`.
