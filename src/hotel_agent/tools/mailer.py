@@ -1,4 +1,4 @@
-"""Mock outbound email. No real integration (out of scope per the task) — sending just
+"""Mock outbound email. No real integration — sending just
 records the message.
 """
 

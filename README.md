@@ -110,8 +110,7 @@ The email body also comes from `--email-file/-f` or piped **stdin**. Key flags: 
 ## Architecture
 
 The same LangGraph agent runs behind the Streamlit UI and the CLI, via one shared entrypoint
-(`service.py`) — there is deliberately **no web backend** (the task deprioritises
-deployment/infra and warns against over-engineering).
+(`service.py`) — there is deliberately **no web backend** .
 
 ```mermaid
 flowchart TD

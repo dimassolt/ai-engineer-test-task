@@ -4,7 +4,6 @@ Each node is a small, single-purpose function over `AgentState`. Dependencies (t
 the PMS) are injected via the `Nodes` container so the same graph runs with a real model
 or a scripted fake in tests.
 
-The two design ideas the task grades sit here:
 - **plan** runs a bounded ReAct loop bound to *read-only* tools, then commits a typed Plan.
   No writes ever happen during planning.
 - **approval_gate** is the autonomous-vs-human split. It uses a *dynamic* `interrupt()`

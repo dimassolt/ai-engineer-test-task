@@ -1,11 +1,9 @@
 """Workflows (a.k.a. skills): named, reliable multi-step recipes over the atomic PMS tools.
 
-This is the heart of the "tools vs skills" split the task grades most heavily.
-
 - **Tools** (`pms.py`) are atomic PMS operations with a single responsibility.
 - **Workflows** are *ordered compositions* of those tools that guarantee the steps run
-  in the right sequence with validation between them — e.g. `make_reservation` is exactly
-  the recipe from the task brief: check guest exists → create if not → price → create.
+  in the right sequence with validation between them — e.g. `make_reservation` is 
+  exactly: check guest exists → create if not → price → create.
 
 The LLM decides *which* workflow to run and with *what* arguments (that's the plan). The
 workflow guarantees *how* it runs. That division is what makes multi-step execution

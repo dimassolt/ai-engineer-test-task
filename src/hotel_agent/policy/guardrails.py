@@ -1,8 +1,7 @@
 """Risk guardrails (Scenario 3).
 
-The single rule the task is most explicit about: ambiguous, policy-sensitive, or
-financially risky requests must **never execute autonomously** — in either mode. This
-module makes that decision *deterministically* (no LLM), so it is reliable and unit
+Ambiguous, policy-sensitive, or financially risky requests must **never execute autonomously** — in either mode. 
+This module makes that decision *deterministically* (no LLM), so it is reliable and unit
 testable. `classify` calls `assess_risk`; if it returns any flag, the approval gate forces
 a human review even in `auto` mode.
 
