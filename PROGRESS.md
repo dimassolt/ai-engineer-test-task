@@ -113,6 +113,7 @@ Second dashboard pass. Backend additions stay minimal and reuse existing state.
 - [x] Planner prompt: if the requested option is unavailable for the dates → schedule NO action, reply that
       it's taken and suggest `find_availability` alternatives; never book an unavailable option
 - [x] Tests decoupled from the mutable runtime PMS via `tests/fixtures/mock_hotel_data.json` (pristine seed)
+- [x] Hotel data explorer: added an **Availability** tab (date × room-type matrix) to trace how bookings decrement stock
 - [x] Verified: pytest 22/22; live — non-refundable booking proceeds (risky=False, books RT002/RP003);
       taken double (Apr 22-24) refused with alternatives, no booking created
 - **Done:** all three requests implemented and verified live.

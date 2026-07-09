@@ -13,3 +13,4 @@ venv/
 # runtime state
 .checkpoints.sqlite
 *.sqlite
+.agents

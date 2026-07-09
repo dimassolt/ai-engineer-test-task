@@ -219,18 +219,33 @@ def consume_stream(gen, status_ph) -> RunResult | None:
 
 
 def render_pms_explorer() -> None:
-    """Read-only browser over the mock PMS (guests, reservations, inventory, rates)."""
+    """Read-only browser over the mock PMS (reservations, availability, guests, rates)."""
     if not pms_data:
         st.info("PMS data file not found or unreadable.", icon=":material/info:")
         return
+    # Availability as a date × room-type matrix, so you can watch a cell drop when a booking
+    # is made (create decrements the held nights; cancel/modify restore them).
+    avail = pms_data.get("availability") or {}
+    rt_ids = [rt["id"] for rt in (pms_data.get("room_types") or [])]
+    avail_rows = [
+        {"Date": d, **{rid: rooms.get(rid, 0) for rid in rt_ids}}
+        for d, rooms in sorted(avail.items())
+        if d != "_comment" and isinstance(rooms, dict)
+    ]
     sections = {
         "Reservations": pms_data.get("reservations"),
+        "Availability": avail_rows,
         "Guests": pms_data.get("guests"),
         "Room types": pms_data.get("room_types"),
         "Rate plans": pms_data.get("rate_plans"),
     }
-    for tab, rows in zip(st.tabs(list(sections)), sections.values()):
+    for tab, (name, rows) in zip(st.tabs(list(sections)), sections.items()):
         with tab:
+            if name == "Availability":
+                st.caption(
+                    "Rooms free per room type per night (columns are room-type ids). "
+                    "Dates not listed are fully booked. Watch a cell drop after a booking."
+                )
             if rows:
                 st.dataframe(rows, hide_index=True, width="stretch")
             else:
