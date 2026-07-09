@@ -331,6 +331,7 @@ the real graph — including both approval modes and the risky-in-auto pause.
 
 - **Improve user management** Now LLM does not check identity of the user before the executing his commands IAM policy needed.
 - **Bug fix** LLM may not return results (Gemini behavior, Claude unavailability), make a retry loop and introduce helth checks, possible fallback to other models.  
+- **Metrics** include metrics for token usage and LLMs logs for future optimisation.
 - **Defoult models** needs to be automated detection of supported models, now they are hardcoded. 
 - **Test RLM/hybrid agent architecture** use strong foundation of python workflow, it can provide more context for the task execution and long dialog threads.
 - **Use the decision log for eval** — the approve/reject audit trail is already captured, the
