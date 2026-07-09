@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 import streamlit as st
 
@@ -104,12 +105,24 @@ NODE_TO_STAGE = {
 }
 
 # stage status → (badge text, badge color, badge icon)
-_BADGE = {
+BadgeColor = Literal["red", "orange", "yellow", "blue", "green", "violet", "gray", "grey", "primary"]
+_BADGE: dict[str, tuple[str, BadgeColor, str]] = {
     "done": ("Done", "green", ":material/check_circle:"),
     "current": ("Running", "blue", ":material/pending:"),
     "waiting": ("Waiting", "orange", ":material/hourglass_top:"),
     "blocked": ("Skipped", "grey", ":material/block:"),
     "pending": ("Pending", "grey", ":material/radio_button_unchecked:"),
+}
+
+# Live one-liner shown while a stage runs — kept relevant to what's happening *now*
+# (not "X complete…"), paired with the latest decision-log line as it streams in.
+STAGE_ACTIVITY = {
+    "parse": ("Reading the guest email…", ":material/mail:"),
+    "classify": ("Checking policy and risk…", ":material/policy:"),
+    "plan": ("Planning with read-only tools…", ":material/checklist:"),
+    "approval": ("Routing for approval…", ":material/how_to_reg:"),
+    "execute": ("Executing approved actions…", ":material/play_circle:"),
+    "finalize": ("Finalizing the outcome…", ":material/flag:"),
 }
 
 
@@ -155,7 +168,7 @@ def render_pipeline(result: RunResult | None) -> None:
     _draw_pipeline(stage_status(result))
 
 
-def write_indicator(result: RunResult) -> tuple[str, str, str]:
+def write_indicator(result: RunResult) -> tuple[str, BadgeColor, str]:
     """(label, color, icon) — does/did this run write to the PMS?"""
     s = result.state
     actions = s.get("plan", {}).get("actions", [])
@@ -176,31 +189,168 @@ def write_indicator(result: RunResult) -> tuple[str, str, str]:
     return ("Read-only — no PMS write", "grey", ":material/lock:")
 
 
-def consume_stream(gen, status_ph) -> RunResult | None:
-    """Drive a service stream, animating the pipeline as each node finishes.
+# ─── Per-stage card bodies ───────────────────────────────────────────────────
+# Each renders that stage's own facts (intent, risk, plan, mode/approval, writes,
+# status) from the agent state — so everything lives *under its stage* instead of in
+# separate boxes. Each takes the (possibly partial, during streaming) state dict and
+# shows a placeholder until its data has been reported.
 
-    The columns are built once; only the per-stage badge is swapped in place each tick, so
-    the horizontal layout never gets re-created (which would ghost as a vertical stack)."""
+def render_parse_body(s: dict) -> None:
+    parsed = s.get("parsed") or {}
+    intent = s.get("intent") or parsed.get("intent")
+    if not intent:
+        st.caption("Reading the email…")
+        return
+    st.markdown(f"**Intent** · {_pretty(intent)}")
+    bits: list[str] = []
+    if parsed.get("check_in") and parsed.get("check_out"):
+        bits.append(f"{parsed['check_in']} → {parsed['check_out']}")
+    if parsed.get("adults"):
+        guests = f"{parsed['adults']}+{parsed['children']}" if parsed.get("children") else parsed["adults"]
+        bits.append(f"{guests} guest(s)")
+    if parsed.get("reservation_id"):
+        bits.append(str(parsed["reservation_id"]))
+    if bits:
+        st.caption(" · ".join(bits))
+
+
+def render_classify_body(s: dict) -> None:
+    if "risky" not in s and "risk_flags" not in s:
+        st.caption("Assessing risk…")
+        return
+    flags = s.get("risk_flags") or []
+    if flags:
+        for f in flags:
+            st.warning(f"**{f['code']}** — {f['reason']}", icon=":material/gpp_maybe:")
+    else:
+        st.success("No risk flags — safe to automate.", icon=":material/verified_user:")
+
+
+def render_plan_body(s: dict) -> None:
+    plan = s.get("plan")
+    if not plan:
+        st.caption("Planning…")
+        return
+    actions = plan.get("actions") or []
+    if plan.get("summary"):
+        st.caption(plan["summary"])
+    if actions:
+        for a in actions:
+            st.markdown(f":material/bolt: **{a['workflow']}** — {a.get('rationale', '')}")
+            if a.get("args"):
+                st.json(a["args"])
+    else:
+        st.caption("Read-only — no write actions.")
+
+
+def render_approval_body(s: dict) -> None:
+    approval = s.get("approval")
+    if approval == "auto_approved":
+        st.success("Auto-approved", icon=":material/bolt:")
+    elif approval == "approved":
+        st.success("Approved by human", icon=":material/check:")
+    elif approval == "rejected":
+        st.error("Rejected — reply not sent", icon=":material/close:")
+    elif s.get("risky"):
+        st.caption("Routed to human review…")
+    else:
+        st.caption("Awaiting approval…")
+    mode_txt = {"auto": "Autonomous", "human": "Human-in-the-loop"}.get(s.get("mode", ""), "")
+    if mode_txt:
+        st.caption(f"Mode · {mode_txt}")
+
+
+def render_execute_body(s: dict) -> None:
+    execution, sent = s.get("execution"), s.get("sent")
+    if execution is None and sent is None:
+        st.caption("Skipped — reply rejected." if s.get("approval") == "rejected" else "Waiting to execute…")
+        return
+    execution = execution or []
+    ok = [r for r in execution if r.get("ok")]
+    if s.get("dry_run") and execution:
+        st.info(f"Simulated {len(execution)} action(s) — PMS untouched.", icon=":material/science:")
+    elif ok:
+        st.success(f"Wrote {len(ok)} action(s) to PMS.", icon=":material/database:")
+    elif execution:
+        st.error("PMS write failed.", icon=":material/error:")
+    else:
+        st.caption("No write actions — read-only reply.")
+    if sent:
+        verb = "Reply would send (dry-run)" if sent.get("dry_run") else "Reply sent"
+        st.caption(f"{verb} → {sent.get('to') or '—'}")
+
+
+def render_finalize_body(s: dict) -> None:
+    status = s.get("status")
+    if not status:
+        st.caption("Awaiting outcome…")
+    elif status == "rejected":
+        st.error(_pretty(status), icon=":material/block:")
+    elif status == "completed_with_errors":
+        st.warning(_pretty(status), icon=":material/warning:")
+    else:
+        st.success(_pretty(status), icon=":material/check_circle:")
+
+
+STAGE_BODIES = {
+    "parse": render_parse_body,
+    "classify": render_classify_body,
+    "plan": render_plan_body,
+    "approval": render_approval_body,
+    "execute": render_execute_body,
+    "finalize": render_finalize_body,
+}
+
+
+def render_state_grid(status: dict[str, str], s: dict) -> None:
+    """Six stage cards in a compact 2×3 grid; each carries its badge + own details."""
+    for start in (0, 3):
+        for col, (label, key, icon) in zip(st.columns(3), STAGES[start:start + 3]):
+            with col, st.container(border=True, height="stretch"):
+                st.markdown(f"{icon} **{label}**")
+                text, color, badge_icon = _BADGE[status[key]]
+                st.badge(text, icon=badge_icon, color=color)
+                STAGE_BODIES[key](s)
+
+
+def consume_stream(gen, status_ph, settings: Settings) -> RunResult | None:
+    """Drive a service stream, animating the 2×3 stage grid live: each node's state delta
+    is merged into a running view and its card fills in as it reports.
+
+    The grid columns/cards are built once; only each card's inner placeholders (badge + body)
+    are swapped each tick, so the layout is never re-created (which would ghost as a vertical
+    stack). The status line stays on the step *in progress* — plus its latest log line."""
     status = {key: "pending" for key in STAGE_ORDER}
     status["parse"] = "current"
-    cells: dict = {}
-    for col, (label, key, icon) in zip(st.columns(len(STAGES), border=True), STAGES):
-        with col:
-            st.markdown(f"{icon} **{label}**")
-            cells[key] = st.empty()
+    badge_cells: dict = {}
+    body_cells: dict = {}
+    for start in (0, 3):
+        for col, (label, key, icon) in zip(st.columns(3), STAGES[start:start + 3]):
+            with col, st.container(border=True, height="stretch"):
+                st.markdown(f"{icon} **{label}**")
+                badge_cells[key] = st.empty()
+                body_cells[key] = st.empty()
+
+    # Running view of the agent state, seeded with the inputs the deltas don't carry.
+    acc: dict = {"mode": settings.mode, "dry_run": settings.dry_run}
 
     def paint() -> None:
-        for key, ph in cells.items():
+        for key in STAGE_ORDER:
             text, color, badge_icon = _BADGE[status[key]]
-            ph.badge(text, icon=badge_icon, color=color)
+            badge_cells[key].badge(text, icon=badge_icon, color=color)
+            with body_cells[key].container():
+                STAGE_BODIES[key](acc)
 
+    label, icon = STAGE_ACTIVITY["parse"]
+    status_ph.markdown(f"{icon} **{label}**")
     paint()
+
     result: RunResult | None = None
     for kind, payload in gen:
         if kind == "result":
             result = payload
             continue
-        for node in payload:  # payload == {node_name: delta} or {"__interrupt__": (...)}
+        for node, delta in payload.items():  # {node: delta} or {"__interrupt__": (...)}
             if node == "__interrupt__":
                 status["approval"] = "waiting"
                 status_ph.info("Paused — awaiting human approval.", icon=":material/pause_circle:")
@@ -209,10 +359,18 @@ def consume_stream(gen, status_ph) -> RunResult | None:
             if not stage:
                 continue
             status[stage] = "done"
+            latest = ""
+            if isinstance(delta, dict):
+                acc.update(delta)  # merge this step's facts into the running state view
+                latest = (delta.get("log") or [""])[-1]
+            # Advance the "current" marker; keep the status line on what's happening now.
             nxt = STAGE_ORDER.index(stage) + 1
             if nxt < len(STAGE_ORDER) and status[STAGE_ORDER[nxt]] == "pending":
                 status[STAGE_ORDER[nxt]] = "current"
-            status_ph.markdown(f":material/bolt: **{stage.capitalize()}** complete…")
+                label, icon = STAGE_ACTIVITY[STAGE_ORDER[nxt]]
+                status_ph.markdown(f"{icon} **{label}**" + (f"  ·  {latest}" if latest else ""))
+            elif latest:
+                status_ph.markdown(f":material/check_circle: {latest}")
         paint()
     status_ph.empty()
     return result
@@ -435,7 +593,7 @@ if pending:
         gen = stream_resume(settings, pending["thread_id"], pending["approved"], pending.get("edited_reply"))
     else:
         gen = stream_run(pending["agent_input"], settings, pending.get("thread_id"))
-    result = _guard(consume_stream, gen, status_ph)
+    result = _guard(consume_stream, gen, status_ph, settings)
     finish_turn(pending, result)
     # The service persists PMS writes to the data file; drop the cached view so it reloads.
     if result and not result.awaiting_approval:
@@ -446,55 +604,13 @@ if pending:
     st.session_state.pop("reply_edit", None)
     st.rerun()
 
-render_pipeline(result)
-
 if result is None:
+    render_pipeline(None)
     st.badge("Idle — start a conversation above", icon=":material/bedtime:", color="grey")
 else:
-    s = result.state
-    parsed = s.get("parsed", {})
-    risk_flags = s.get("risk_flags", [])
-    plan = s.get("plan", {})
-    actions = plan.get("actions", []) or []
-
     label, color, icon = write_indicator(result)
     st.badge(label, icon=icon, color=color)
-
-    with st.container(horizontal=True):
-        st.metric("Intent", _pretty(parsed.get("intent")), border=True)
-        st.metric("Risk", "Clear" if not risk_flags else f"{len(risk_flags)} flag(s)", border=True)
-        st.metric("Planned actions", len(actions), border=True)
-        st.metric("Mode", "Autonomous" if s.get("mode") == "auto" else "Human", border=True)
-        st.metric("Status", _pretty(result.status), border=True)
-
-    log_col, risk_col = st.columns(2)
-    with log_col, st.container(border=True):
-        st.markdown(":material/menu_book: **Decision log**")
-        log = s.get("log", [])
-        if log:
-            for i, line in enumerate(log, 1):
-                st.markdown(f":material/chevron_right: **{i}.** {line}")
-        else:
-            st.caption("No log entries.")
-    with risk_col, st.container(border=True):
-        st.markdown(":material/shield: **Risk assessment**")
-        if risk_flags:
-            for f in risk_flags:
-                st.warning(f"**{f['code']}** — {f['reason']}", icon=":material/gpp_maybe:")
-        else:
-            st.success("No risk flags — safe to automate.", icon=":material/verified_user:")
-
-    with st.container(border=True):
-        st.markdown(":material/task: **Plan**")
-        if plan.get("summary"):
-            st.caption(plan["summary"])
-        if actions:
-            for a in actions:
-                st.markdown(f":material/bolt: **{a['workflow']}** — {a.get('rationale', '')}")
-                if a.get("args"):
-                    st.json(a["args"])
-        else:
-            st.caption("Read-only request — no write actions planned.")
+    render_state_grid(stage_status(result), result.state)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

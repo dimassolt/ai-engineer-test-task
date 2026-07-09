@@ -122,6 +122,11 @@ Second dashboard pass. Backend additions stay minimal and reuse existing state.
 
 ## Session log
 
+- 2026-07-09 — Docs: rewrote README to be Streamlit-first (promote the dashboard); merged
+  `Architecture.md` (mermaid system + sequence diagrams, badges, scenario map) into README and
+  deleted it. Fixed stale bits: install now `pip install -e ".[ui]"`, 6 read tools incl.
+  `list_inventory`, workflow names, PMS-persist is done (dropped from "next"), 22 tests, added
+  decision-audit-log + `history.py`/`__main__.py` to layout.
 - 2026-07-08 — Repo bootstrapped from CLAUDE.md; architecture and flags fixed.
 - 2026-07-08 — Built full agent: PMS+tools, workflows, providers, graph (6 nodes), guardrails,
   CLI, Streamlit. 20 pytest tests green. Verified all 3 scenarios + both modes live on Anthropic

@@ -126,27 +126,27 @@
     "_comment": "Number of available rooms per room type per date. Dates not listed have zero availability.",
     "2025-04-18": {
       "RT001": 3,
-      "RT002": 1,
+      "RT002": 2,
       "RT003": 1,
       "RT004": 1
     },
     "2025-04-19": {
       "RT001": 3,
-      "RT002": 1,
+      "RT002": 2,
       "RT003": 1,
       "RT004": 1
     },
     "2025-04-20": {
       "RT001": 2,
       "RT002": 0,
-      "RT003": 0,
-      "RT004": 0
+      "RT003": 1,
+      "RT004": 1
     },
     "2025-04-21": {
       "RT001": 2,
       "RT002": 0,
-      "RT003": 0,
-      "RT004": 0
+      "RT003": 1,
+      "RT004": 1
     },
     "2025-04-22": {
       "RT001": 1,
@@ -238,7 +238,7 @@
       "email": "ola@example.com",
       "phone": "",
       "nationality": "",
-      "created_at": "2026-07-08"
+      "created_at": "2026-07-09"
     }
   ],
   "reservations": [
@@ -335,78 +335,8 @@
       "check_out": "2025-04-22",
       "adults": 2,
       "children": 0,
-      "status": "cancelled",
-      "total_amount": 4600,
-      "notes": "",
-      "created_at": "2026-07-08"
-    },
-    {
-      "id": "RES008",
-      "guest_id": "G006",
-      "room_type_id": "RT002",
-      "rate_plan_id": "RP002",
-      "check_in": "2025-04-20",
-      "check_out": "2025-04-22",
-      "adults": 2,
-      "children": 0,
       "status": "confirmed",
       "total_amount": 4600,
-      "notes": "",
-      "created_at": "2026-07-09"
-    },
-    {
-      "id": "RES009",
-      "guest_id": "G006",
-      "room_type_id": "RT003",
-      "rate_plan_id": "RP002",
-      "check_in": "2025-04-20",
-      "check_out": "2025-04-22",
-      "adults": 2,
-      "children": 0,
-      "status": "confirmed",
-      "total_amount": 6000,
-      "notes": "",
-      "created_at": "2026-07-09"
-    },
-    {
-      "id": "RES010",
-      "guest_id": "G006",
-      "room_type_id": "RT004",
-      "rate_plan_id": "RP002",
-      "check_in": "2025-04-20",
-      "check_out": "2025-04-22",
-      "adults": 2,
-      "children": 0,
-      "status": "confirmed",
-      "total_amount": 8600,
-      "notes": "",
-      "created_at": "2026-07-09"
-    },
-    {
-      "id": "RES011",
-      "guest_id": "G006",
-      "room_type_id": "RT003",
-      "rate_plan_id": "RP002",
-      "check_in": "2025-04-18",
-      "check_out": "2025-04-20",
-      "adults": 2,
-      "children": 0,
-      "status": "cancelled",
-      "total_amount": 6000,
-      "notes": "Cancelled: Guest requested cancellation.",
-      "created_at": "2026-07-09"
-    },
-    {
-      "id": "RES012",
-      "guest_id": "G006",
-      "room_type_id": "RT002",
-      "rate_plan_id": "RP004",
-      "check_in": "2025-04-18",
-      "check_out": "2025-04-20",
-      "adults": 2,
-      "children": 0,
-      "status": "confirmed",
-      "total_amount": 4140,
       "notes": "",
       "created_at": "2026-07-09"
     }
