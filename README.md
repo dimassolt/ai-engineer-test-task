@@ -60,7 +60,7 @@ streamlit run src/hotel_agent/app_streamlit.py
 - **Watch the graph run live.** The six pipeline stages (Parse → Classify → Plan → Approval →
   Execute → Finalize) light up in real time as each node streams, each with its own facts:
   parsed intent, risk flags, the chosen plan, the approval decision, and the write result.
-- **A clear PMS-write indicator** — read-only, pending approval, simulated (dry-run), or
+- **A clear PMS-write indicator** — read-only, pending approval, or
   *"Wrote to PMS — N action(s) committed."*
 - **Human-in-the-loop approval panel.** In `human` mode (or when a request is flagged risky)
   the run pauses; you can **edit the draft reply**, then **Approve & send** or **Reject**.
@@ -72,8 +72,8 @@ streamlit run src/hotel_agent/app_streamlit.py
 - **Decision history.** A SQLite audit log of every completed run — approved, auto-approved,
   or rejected, and whether it wrote to the PMS — with totals and a filter.
 
-Sidebar toggles mirror the CLI flags: **mode** (human / auto), **provider**, **dry-run**, and
-the **PMS data file**.
+Sidebar toggles mirror the CLI flags: **mode** (human / auto), **provider**, and the
+**PMS data file**.
 
 ---
 
@@ -91,9 +91,9 @@ python -m hotel_agent -e "Book a Standard Double w/ breakfast, Apr 20-22, 2 adul
 # ...review the printed plan, then approve (resumes from the SQLite checkpoint):
 python -m hotel_agent --resume --thread-id demo1 --approve
 
-# Scenario 2 — fully autonomous, but simulate (no real write/send)
+# Scenario 2 — fully autonomous (writes + sends end-to-end)
 python -m hotel_agent -e "Book a double w/ breakfast, Apr 20-22, 2 adults. me@example.com" \
-  --mode auto --dry-run
+  --mode auto
 
 # Scenario 3 — risky request is held for a human even in auto mode
 python -m hotel_agent -e "I want a refund on my non-refundable booking RES002. \
@@ -101,7 +101,7 @@ python -m hotel_agent -e "I want a refund on my non-refundable booking RES002. \
 ```
 
 The email body also comes from `--email-file/-f` or piped **stdin**. Key flags: `--mode`
-`human|auto`, `--provider`, `--model`, `--dry-run`, `--show-plan`, `--json`,
+`human|auto`, `--provider`, `--model`, `--show-plan`, `--json`,
 `--thread-id`/`--resume`/`--approve`/`--reject`, `--checkpointer sqlite|memory`. See
 `python -m hotel_agent --help` for the full list.
 
@@ -171,7 +171,7 @@ different process (SQLite).
 3. `plan` — bounded **ReAct loop bound to read-only tools**, then commits a typed `Plan`
    (chosen workflows + args) and a draft reply. **No writes happen here.**
 4. `approval_gate` — the autonomous-vs-human split (see decisions).
-5. `execute` — runs approved **workflows** (writes) + mock send. Honors `--dry-run`.
+5. `execute` — runs approved **workflows** (writes) + mock send.
 6. `finalize` — sets the final status and logs the outcome to the decision audit log.
 
 ### Request & approval sequence
@@ -269,10 +269,10 @@ five tool calls in the right order — the recipe owns the ordering and validati
   resumable later — even from a *different process* (SQLite backend) — which is how the
   two-command human-approval flow works. Tests use the in-memory backend.
 
-- **Approved PMS writes persist to disk.** After an approved, non-dry-run write on the SQLite
-  backend, `service.py` saves the mutated PMS back to the data file, so the dashboard reflects
-  real bookings. **Dry-run and the in-memory backend (tests) never touch the seed file**
-  (`git checkout data/` restores it).
+- **Approved PMS writes persist to disk.** After an approved write on the SQLite backend,
+  `service.py` saves the mutated PMS back to the data file, so the dashboard reflects real
+  bookings. **The in-memory backend (tests) never touches the seed file** (`git checkout data/`
+  restores it).
 
 - **A separate SQLite decision audit log** (`history.py`) records every terminal run —
   approved / auto-approved / rejected, and whether it wrote to the PMS. It's distinct from the

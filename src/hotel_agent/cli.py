@@ -7,8 +7,8 @@
     python -m hotel_agent -e "Book a double with breakfast, Apr 20-22, 2 adults" --mode human
     python -m hotel_agent --resume --thread-id <id> --approve
 
-    # fully autonomous, no real writes/sends
-    python -m hotel_agent -e "..." --mode auto --dry-run
+    # fully autonomous
+    python -m hotel_agent -e "..." --mode auto
 """
 
 from __future__ import annotations
@@ -43,7 +43,6 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--approve", action="store_true", help="Approve when resuming a human-mode run.")
     p.add_argument("--reject", action="store_true", help="Reject when resuming a human-mode run.")
 
-    p.add_argument("--dry-run", action="store_true", help="Simulate writes/sending; never mutate or send.")
     p.add_argument("--checkpointer", choices=["sqlite", "memory"], default=None, help="State backend.")
     p.add_argument("--db", default=None, help="SQLite checkpoint file.")
 
@@ -63,7 +62,6 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
     if args.data:         s.data_path = args.data
     if args.checkpointer: s.checkpointer = args.checkpointer
     if args.db:           s.db_path = args.db
-    if args.dry_run:      s.dry_run = True
     return s
 
 
@@ -121,8 +119,7 @@ def _render(result: RunResult) -> None:
 
     sent = st.get("sent")
     if sent:
-        tag = " (dry-run, not sent)" if sent.get("dry_run") else ""
-        print(f"\n■ reply {'would be sent' if sent.get('dry_run') else 'sent'} to {sent['to']}{tag}")
+        print(f"\n■ reply sent to {sent['to']}")
 
     print(f"\n● status: {st.get('status', result.status)}\n")
 

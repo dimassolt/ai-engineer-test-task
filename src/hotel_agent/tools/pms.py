@@ -61,8 +61,8 @@ class PMS:
     def save(self, path: str | Path | None = None) -> None:
         """Persist the current state back to JSON (defaults to the file it was loaded from).
 
-        Off by default — the service only calls this after an approved, non-dry-run write, so
-        the mock PMS file reflects reservations the agent actually made."""
+        Off by default — the service only calls this after an approved write, so the mock PMS
+        file reflects reservations the agent actually made."""
         target = path or self._source_path
         if target is None:
             raise PMSError("No path to save the PMS to (loaded from a dict, not a file).")
@@ -355,5 +355,5 @@ class PMS:
         return res
 
     def snapshot(self) -> dict[str, Any]:
-        """Deep copy of the current state — used for dry-run diffing / debugging."""
+        """Deep copy of the current state — used for inspection / test assertions."""
         return copy.deepcopy(self._data)

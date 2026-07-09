@@ -55,7 +55,7 @@ class Nodes:
     # 1) Extract structured fields from the raw email.
     def parse(self, state: AgentState) -> dict:
         parsed: ParsedEmail = _structured(self.model, ParsedEmail).invoke(
-            [SystemMessage(load_prompt("parser")), HumanMessage(state["email"])]
+            [SystemMessage(load_prompt("parser")), HumanMessage(state["email"])] # type: ignore
         )
         return {
             "parsed": parsed.model_dump(),
@@ -65,10 +65,10 @@ class Nodes:
 
     # 2) Deterministic risk pre-check (Scenario 3 guardrail).
     def classify(self, state: AgentState) -> dict:
-        parsed = state["parsed"]
+        parsed = state["parsed"] # type: ignore
         flags = assess_risk(
             intent=parsed["intent"],
-            text=state["email"],
+            text=state["email"], # type: ignore
             pms=self.pms,
             sender_email=parsed.get("sender_email"),
             reservation_id=parsed.get("reservation_id"),
@@ -102,7 +102,7 @@ class Nodes:
 
         messages: list = [
             SystemMessage(system),
-            HumanMessage(f"Guest email:\n{state['email']}\n\nParsed fields: {json.dumps(state['parsed'])}"),
+            HumanMessage(f"Guest email:\n{state['email']}\n\nParsed fields: {json.dumps(state['parsed'])}"), # type: ignore
         ]
         trace: list[dict] = []
         for _ in range(MAX_REACT_STEPS):
@@ -117,7 +117,7 @@ class Nodes:
                 messages.append(ToolMessage(content=json.dumps(result, default=str), tool_call_id=call["id"]))
 
         plan: Plan = _structured(self.model, Plan).invoke(
-            messages + [HumanMessage("Now output the final structured plan and draft reply.")]
+            messages + [HumanMessage("Now output the final structured plan and draft reply.")] # type: ignore
         )
         # Safety net: a flagged request must never carry executable actions.
         if state.get("risky"):
@@ -133,7 +133,7 @@ class Nodes:
     # 4) Autonomous-vs-human split. Dynamic interrupt keyed on mode + risk.
     def approval_gate(self, state: AgentState) -> dict:
         risky = state.get("risky", False)
-        auto_ok = state["mode"] == "auto" and not risky
+        auto_ok = state["mode"] == "auto" and not risky # type: ignore
         if auto_ok:
             return {"approved": True, "approval": "auto_approved", "log": ["auto-approved"]}
 
@@ -142,9 +142,9 @@ class Nodes:
             {
                 "type": "approval_request",
                 "reason": "risky_request" if risky else "human_mode",
-                "summary": state["plan"]["summary"],
-                "actions": state["plan"]["actions"],
-                "draft_reply": state["draft_reply"],
+                "summary": state["plan"]["summary"],# type: ignore
+                "actions": state["plan"]["actions"], # type: ignore
+                "draft_reply": state["draft_reply"], # type: ignore
                 "risk_flags": state.get("risk_flags", []),
             }
         )
@@ -158,25 +158,21 @@ class Nodes:
             out["draft_reply"] = decision["edited_reply"]
         return out
 
-    # 5) Run approved workflows (writes) + send the reply. Skips real effects on dry-run.
+    # 5) Run approved workflows (writes) + send the reply.
     def execute(self, state: AgentState) -> dict:
-        dry_run = state.get("dry_run", False)
-        # On dry-run, operate on a throwaway copy so nothing (not even in-memory) is committed.
-        target = PMS(self.pms.snapshot()) if dry_run else self.pms
-
         results: list[dict] = []
-        for action in state["plan"].get("actions", []):
-            result = run_workflow(target, action["workflow"], action.get("args", {}))
+        for action in state["plan"].get("actions", []): # type: ignore
+            result = run_workflow(self.pms, action["workflow"], action.get("args", {}))
             results.append(dataclasses.asdict(result))
             if not result.ok:
                 break  # stop the workflow chain on the first failure
 
         to = (state.get("parsed") or {}).get("sender_email") or ""
-        sent = send_reply(to, _SUBJECT, state["draft_reply"], dry_run=dry_run)
+        sent = send_reply(to, _SUBJECT, state["draft_reply"]) # type: ignore
         return {
             "execution": results,
             "sent": dataclasses.asdict(sent),
-            "log": [f"executed {len(results)} action(s){' (dry-run)' if dry_run else ''}, reply sent"],
+            "log": [f"executed {len(results)} action(s), reply sent"],
         }
 
     # 6) Decide the final status for reporting.
@@ -185,7 +181,7 @@ class Nodes:
             status = "rejected"
         elif any(not r["ok"] for r in state.get("execution", [])):
             status = "completed_with_errors"
-        elif not state["plan"].get("actions"):
+        elif not state["plan"].get("actions"): # type: ignore
             status = "completed"  # read-only reply sent
         else:
             status = "completed"

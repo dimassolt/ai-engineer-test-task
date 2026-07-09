@@ -175,8 +175,6 @@ def write_indicator(result: RunResult) -> tuple[str, BadgeColor, str]:
     execution = s.get("execution", [])
     if execution:
         ok = [r for r in execution if r.get("ok")]
-        if s.get("dry_run"):
-            return ("PMS simulated (dry-run) — not modified", "orange", ":material/science:")
         if ok:
             return (f"Wrote to PMS — {len(ok)} action(s) committed", "green", ":material/database:")
         return ("PMS write attempted but failed", "red", ":material/error:")
@@ -267,17 +265,14 @@ def render_execute_body(s: dict) -> None:
         return
     execution = execution or []
     ok = [r for r in execution if r.get("ok")]
-    if s.get("dry_run") and execution:
-        st.info(f"Simulated {len(execution)} action(s) — PMS untouched.", icon=":material/science:")
-    elif ok:
+    if ok:
         st.success(f"Wrote {len(ok)} action(s) to PMS.", icon=":material/database:")
     elif execution:
         st.error("PMS write failed.", icon=":material/error:")
     else:
         st.caption("No write actions — read-only reply.")
     if sent:
-        verb = "Reply would send (dry-run)" if sent.get("dry_run") else "Reply sent"
-        st.caption(f"{verb} → {sent.get('to') or '—'}")
+        st.caption(f"Reply sent → {sent.get('to') or '—'}")
 
 
 def render_finalize_body(s: dict) -> None:
@@ -332,7 +327,7 @@ def consume_stream(gen, status_ph, settings: Settings) -> RunResult | None:
                 body_cells[key] = st.empty()
 
     # Running view of the agent state, seeded with the inputs the deltas don't carry.
-    acc: dict = {"mode": settings.mode, "dry_run": settings.dry_run}
+    acc: dict = {"mode": settings.mode}
 
     def paint() -> None:
         for key in STAGE_ORDER:
@@ -456,7 +451,6 @@ with st.sidebar:
         help="Human = approve before any write/send. Auto = end-to-end, unless flagged risky.",
     ) or "human"
     provider = st.selectbox("LLM provider", ["auto", "anthropic", "openai", "gemini"])
-    dry_run = st.toggle("Dry run", help="Simulate writes and sends — never mutate the PMS or 'send'.")
 
     with st.expander("Advanced", icon=":material/tune:"):
         data_path = st.text_input("PMS data file", "data/mock_hotel_data.json")
@@ -466,7 +460,7 @@ with st.sidebar:
         "requests are routed to human review in **both** modes."
     )
 
-settings = Settings(mode=mode, provider=provider, dry_run=dry_run, data_path=data_path)
+settings = Settings(mode=mode, provider=provider, data_path=data_path)
 pms_data = load_pms(data_path)
 hotel_name = (pms_data.get("hotel") or {}).get("name", "Grand Oslo Hotel")
 
@@ -598,7 +592,7 @@ if pending:
     # The service persists PMS writes to the data file; drop the cached view so it reloads.
     if result and not result.awaiting_approval:
         st_ = result.state
-        if not st_.get("dry_run") and any(r.get("ok") for r in st_.get("execution", [])):
+        if any(r.get("ok") for r in st_.get("execution", [])):
             load_pms.clear()
     st.session_state.result = result
     st.session_state.pop("reply_edit", None)
@@ -672,11 +666,10 @@ else:
         )
         sent = s.get("sent")
         if sent:
-            verb = "would be sent (dry run)" if sent.get("dry_run") else "sent"
             render_message(
                 sent.get("body", ""),
                 to=sent.get("to"), subject=sent.get("subject"),
-                title=f"Reply {verb}", icon=":material/outgoing_mail:",
+                title="Reply sent", icon=":material/outgoing_mail:",
                 caption=f"At {sent.get('sent_at', '')}",
             )
 

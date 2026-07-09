@@ -66,7 +66,6 @@ class AgentState(TypedDict, total=False):
     # --- inputs ---
     email: str
     mode: str            # "human" | "auto"
-    dry_run: bool
     # --- parse ---
     parsed: dict
     # --- classify (risk) ---

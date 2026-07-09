@@ -40,14 +40,12 @@ class RunResult:
 
 
 def _wrote_pms(state: dict[str, Any]) -> bool:
-    """True only if a write workflow actually committed (never on dry-run)."""
-    if state.get("dry_run"):
-        return False
+    """True only if a write workflow actually committed."""
     return any(r.get("ok") for r in state.get("execution", []))
 
 
 def _maybe_persist(settings: Settings | None, pms, result: RunResult) -> None:
-    """Write the mutated PMS back to disk after an approved, non-dry-run write.
+    """Write the mutated PMS back to disk after an approved write.
 
     Gated to non-memory checkpointers so unit tests (which load the real seed file with the
     in-memory backend) never mutate `data/mock_hotel_data.json`."""
@@ -106,7 +104,7 @@ def _collect(graph, thread_id: str, invoke_result: Any,
 
 
 def _inputs(email: str, settings: Settings) -> dict[str, Any]:
-    return {"email": email, "mode": settings.mode, "dry_run": settings.dry_run}
+    return {"email": email, "mode": settings.mode}
 
 
 # ── Blocking entrypoints (used by the CLI) ───────────────────────────────────

@@ -82,9 +82,9 @@ def make_graph(pms):
     return _factory
 
 
-def run_graph(graph, email: str, mode: str, dry_run: bool = False, thread_id: str = "t1"):
+def run_graph(graph, email: str, mode: str, thread_id: str = "t1"):
     config = {"configurable": {"thread_id": thread_id}}
-    graph.invoke({"email": email, "mode": mode, "dry_run": dry_run}, config)
+    graph.invoke({"email": email, "mode": mode}, config)
     return graph.get_state(config)
 
 

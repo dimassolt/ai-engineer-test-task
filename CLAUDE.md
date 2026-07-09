@@ -168,7 +168,6 @@ Keys via `.env` (see `.env.example`): `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
 | `--thread-id` | id | random | LangGraph thread for persistence / resuming a paused run |
 | `--resume` | flag | off | Resume a run paused at the approval gate (use with `--thread-id`) |
 | `--approve` / `--reject` | flag | — | Approval decision when resuming a `human`-mode run |
-| `--dry-run` | flag | off | Simulate writes and sending; never mutate the PMS or "send", even in `auto` |
 | `--checkpointer` | `sqlite` \| `memory` | `sqlite` | State persistence backend |
 | `--db` | path | `.checkpoints.sqlite` | SQLite checkpoint file |
 | `--show-plan` | flag | off | Print the structured plan + draft reply, then stop (no execution) |
@@ -187,15 +186,15 @@ python -m hotel_agent -f email.txt --mode human
 # ...review the printed plan, then:
 python -m hotel_agent --resume --thread-id <id> --approve
 
-# Scenario 2 — fully autonomous, but no real writes
-python -m hotel_agent -f email.txt --mode auto --dry-run
+# Scenario 2 — fully autonomous, writes + sends end-to-end
+python -m hotel_agent -f email.txt --mode auto
 
 # Scenario 3 — risky request is flagged even in auto mode
 python -m hotel_agent -e "Refund my non-refundable booking" --mode auto
 ```
 
 **Streamlit (optional UI):** `streamlit run src/hotel_agent/app_streamlit.py`
-Sidebar toggles mirror the flags above (mode, provider, data path, dry-run).
+Sidebar toggles mirror the flags above (mode, provider, data path).
 
 ---
 
@@ -204,10 +203,10 @@ Sidebar toggles mirror the flags above (mode, provider, data path, dry-run).
 - Prompts live in `prompts/` as separate files; keep them minimal and explicit.
 - Every tool is a pure function over the loaded PMS. **Writes mutate an in-memory copy.**
   They are persisted back to the data file (`PMS.save`) only by the *service layer*, and only
-  after an approved, non-dry-run write on a persistent (non-memory) checkpointer — so the
-  dashboard reflects real bookings while **unit tests (memory backend) and dry-run never touch
-  the seed**. (Reverses the original "never mutate the original" rule, per an explicit request;
-  `git checkout data/` restores the seed.)
+  after an approved write on a persistent (non-memory) checkpointer — so the dashboard reflects
+  real bookings while **unit tests (memory backend) never touch the seed**. (Reverses the
+  original "never mutate the original" rule, per an explicit request; `git checkout data/`
+  restores the seed.)
 - Add or extend a scenario test whenever you change behavior.
 - Don't introduce a new abstraction unless it removes real duplication. Match the timebox.
 

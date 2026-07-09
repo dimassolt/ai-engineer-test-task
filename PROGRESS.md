@@ -122,6 +122,10 @@ Second dashboard pass. Backend additions stay minimal and reuse existing state.
 
 ## Session log
 
+- 2026-07-09 — Removed dry-run entirely (per request): dropped `--dry-run` CLI flag + sidebar
+  toggle, `Settings.dry_run`, `AgentState.dry_run`, mailer `dry_run`, and all downstream
+  branches in nodes/service/streamlit; updated README + CLAUDE.md. pytest 22/22; Streamlit
+  renders clean via AppTest.
 - 2026-07-09 — Docs: rewrote README to be Streamlit-first (promote the dashboard); merged
   `Architecture.md` (mermaid system + sequence diagrams, badges, scenario map) into README and
   deleted it. Fixed stale bits: install now `pip install -e ".[ui]"`, 6 read tools incl.
