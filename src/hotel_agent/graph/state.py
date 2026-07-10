@@ -10,10 +10,11 @@ return well-formed, typed results (a parsed email and an action plan) instead of
 
 from __future__ import annotations
 
+import json
 import operator
 from typing import Annotated, Any, Literal, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 INTENTS = Literal[
     "availability_inquiry",
@@ -49,6 +50,22 @@ class PlanAction(BaseModel):
     workflow: WORKFLOW_NAMES
     args: dict[str, Any] = Field(default_factory=dict, description="Arguments for the workflow.")
     rationale: str = Field("", description="Why this action, in one line.")
+
+    @field_validator("args", mode="before")
+    @classmethod
+    def _coerce_args(cls, v: Any) -> Any:
+        """Gemini's function-calling schema can't represent an open `dict[str, Any]`
+        parameter (langchain-google-genai's $defs resolution drops `additionalProperties`
+        and falls back to a plain STRING type for `args`), so it sometimes emits
+        "key=value,key2=value2" text instead of a JSON object. Parse that back into a
+        dict; real dicts/JSON strings pass through unchanged."""
+        if not isinstance(v, str):
+            return v
+        try:
+            return json.loads(v)
+        except json.JSONDecodeError:
+            pass
+        return dict(pair.split("=", 1) for pair in v.split(",") if "=" in pair)
 
 
 class Plan(BaseModel):

@@ -18,8 +18,14 @@ Run:  streamlit run src/hotel_agent/app_streamlit.py
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Literal
+
+# pyarrow's mimalloc allocator segfaults when it first initializes its thread-local
+# heap on Streamlit's ScriptRunner thread (seen with pyarrow 25 on Python 3.14/macOS
+# arm64). Force the plain system allocator before pyarrow gets imported.
+os.environ.setdefault("ARROW_DEFAULT_MEMORY_POOL", "system")
 
 import streamlit as st
 

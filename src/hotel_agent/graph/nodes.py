@@ -30,7 +30,7 @@ from ..tools.read_tools import build_read_tools
 from ..tools.workflows import run_workflow
 from .state import AgentState, ParsedEmail, Plan
 
-MAX_REACT_STEPS = 6
+MAX_REACT_STEPS = 10
 _SUBJECT = "Re: your enquiry — Grand Oslo Hotel"
 
 
